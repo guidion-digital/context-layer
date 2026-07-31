@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   regenerate:
-    uses: guidion-digital/context-layer/.github/workflows/regenerate-context.yaml@b1b1841bbe672fb196d6e53d5ed62421369f3134
+    uses: guidion-digital/context-layer/.github/workflows/regenerate-context.yaml@0.0.1
     with:
       context_file: CONTEXT.md
       base_branch: master
