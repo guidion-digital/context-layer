@@ -84,6 +84,7 @@ jobs:
           python3 - <<'PYEOF'
           import json
           import os
+          import re
           import urllib.request
           import urllib.error
 
@@ -124,7 +125,9 @@ jobs:
           Update {context_file} to reflect any changes. If nothing meaningful changed, return the file \
           unchanged but update `last_reviewed` in the frontmatter and the last_reviewed bullet in \
           the Freshness section to today's date, and set `generated_by` to `CI-generated`, if those \
-          fields exist in the file."""
+          fields exist in the file. If the current file contains a section titled \
+          `Recent changes (last 7 days of git log):`, preserve that section and keep it in the \
+          output."""
 
           payload = {
               "model": os.environ['MODEL'],
@@ -162,6 +165,23 @@ jobs:
 
           if not content:
               raise RuntimeError(f"OpenAI API response did not include output text. Body: {json.dumps(body)}")
+
+          # Keep the recent-change summary deterministic if the source file already has it.
+          recent_header = "Recent changes (last 7 days of git log):"
+          if recent_header in context_md:
+              recent_body = git_log or "(no commits in the last 7 days)"
+              recent_block = f"{recent_header}\n{recent_body}"
+              section_pattern = re.compile(
+                  rf"{re.escape(recent_header)}\n.*?(?=\n## |\Z)",
+                  re.DOTALL,
+              )
+
+              if section_pattern.search(content):
+                  content = section_pattern.sub(recent_block, content, count=1)
+              else:
+                  content = content.rstrip() + "\n\n" + recent_block
+
+          content = content.rstrip() + "\n"
 
           with open(context_file, "w") as f:
               f.write(content)
