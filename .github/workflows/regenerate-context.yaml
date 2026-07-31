@@ -60,6 +60,13 @@ jobs:
 
           git log --oneline --stat --since="7 days ago" > .tmp/git-log.txt
 
+          if [ -s .tmp/git-log.txt ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No git changes in the last 7 days; skipping context regeneration."
+          fi
+
           : > .tmp/repo-tree.txt
           IFS=',' read -ra DIRS <<< "$TREE_DIRS"
           for raw_dir in "${DIRS[@]}"; do
@@ -75,6 +82,7 @@ jobs:
           done
 
       - name: Call OpenAI API to regenerate context file
+        if: steps.context.outputs.has_changes == 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CONTEXT_FILE: ${{ inputs.context_file }}
