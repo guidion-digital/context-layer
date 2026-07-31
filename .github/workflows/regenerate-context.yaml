@@ -58,7 +58,7 @@ jobs:
 
           cp "$CONTEXT_FILE" .tmp/context.md
 
-          git log --oneline --stat --since="7 days ago" > .tmp/git-log.txt
+          git log --oneline --stat --since="2 days ago" > .tmp/git-log.txt
 
           if [ -s .tmp/git-log.txt ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
