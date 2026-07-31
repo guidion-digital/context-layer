@@ -1,0 +1,225 @@
+name: Regenerate Context File
+
+on:
+  workflow_call:
+    inputs:
+      context_file:
+        description: "Path (relative to repo root) of the context file to keep up to date."
+        required: false
+        type: string
+        default: "CONTEXT.md"
+      base_branch:
+        description: "Branch to check out and open the pull request against."
+        required: false
+        type: string
+        default: "acc"
+      tree_dirs:
+        description: 'Comma-separated list of directories (relative to repo root) to summarize for the model. Use "." for the repo root.'
+        required: false
+        type: string
+        default: "."
+      model:
+        description: "OpenAI model to use for regenerating the context file."
+        required: false
+        type: string
+        default: "gpt-5.6-luna"
+      prompt_addition:
+        description: "Optional extra instructions appended to the default system prompt (e.g. repo-specific conventions)."
+        required: false
+        type: string
+        default: ""
+    secrets:
+      OPENAI_API_KEY:
+        description: "API key for the OpenAI account used to regenerate the context file."
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base_branch }}
+          fetch-depth: 0
+
+      - name: Gather repo context
+        id: context
+        env:
+          CONTEXT_FILE: ${{ inputs.context_file }}
+          TREE_DIRS: ${{ inputs.tree_dirs }}
+        run: |
+          mkdir -p .tmp
+
+          cp "$CONTEXT_FILE" .tmp/context.md
+
+          git log --oneline --stat --since="7 days ago" > .tmp/git-log.txt
+
+          : > .tmp/repo-tree.txt
+          IFS=',' read -ra DIRS <<< "$TREE_DIRS"
+          for raw_dir in "${DIRS[@]}"; do
+            dir="$(echo "$raw_dir" | xargs)"
+            [ -z "$dir" ] && continue
+            if [ "$dir" = "." ]; then
+              echo "--- repo root ---" >> .tmp/repo-tree.txt
+              find . -maxdepth 2 -not -path './.git*' -not -path './.tmp*' | sort >> .tmp/repo-tree.txt
+            else
+              echo "--- ${dir}/ ---" >> .tmp/repo-tree.txt
+              find "$dir" -maxdepth 2 2>/dev/null | sort >> .tmp/repo-tree.txt
+            fi
+          done
+
+      - name: Call OpenAI API to regenerate context file
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CONTEXT_FILE: ${{ inputs.context_file }}
+          MODEL: ${{ inputs.model }}
+          PROMPT_ADDITION: ${{ inputs.prompt_addition }}
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import os
+          import urllib.request
+          import urllib.error
+
+          context_file = os.environ['CONTEXT_FILE']
+
+          system_prompt = (
+              "You are a technical documentation maintainer responsible for keeping a repository's "
+              f"{context_file} file accurate and up to date. You will be given the current file, a "
+              "summary of recent git history, and the repository's directory structure. Update the "
+              "file so it accurately reflects the current state of the repository, preserving its "
+              "existing structure, tone, and level of detail unless something has clearly changed. "
+              "Return ONLY the full updated file content — no explanation, no markdown code fence, "
+              "no surrounding text of any kind."
+          )
+
+          prompt_addition = os.environ.get('PROMPT_ADDITION', '').strip()
+          if prompt_addition:
+              system_prompt += "\n\n" + prompt_addition
+
+          with open('.tmp/context.md', 'r', encoding='utf-8') as f:
+              context_md = f.read()
+
+          with open('.tmp/git-log.txt', 'r', encoding='utf-8') as f:
+              git_log = f.read().strip()
+
+          with open('.tmp/repo-tree.txt', 'r', encoding='utf-8') as f:
+              repo_tree = f.read()
+
+          user_prompt = f"""Current {context_file}:
+          {context_md}
+
+          Recent changes (last 7 days of git log):
+          {git_log or '(no commits in the last 7 days)'}
+
+          Current repo structure:
+          {repo_tree}
+
+          Update {context_file} to reflect any changes. If nothing meaningful changed, return the file \
+          unchanged but update `last_reviewed` in the frontmatter and the last_reviewed bullet in \
+          the Freshness section to today's date, and set `generated_by` to `CI-generated`, if those \
+          fields exist in the file."""
+
+          payload = {
+              "model": os.environ['MODEL'],
+              "input": [
+                  {"role": "system", "content": system_prompt},
+                  {"role": "user", "content": user_prompt},
+              ],
+          }
+
+          req = urllib.request.Request(
+              "https://api.openai.com/v1/responses",
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+              },
+          )
+
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  body = json.loads(resp.read())
+          except urllib.error.HTTPError as e:
+              err_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+              raise RuntimeError(f"OpenAI API request failed: HTTP {e.code} {e.reason}\n{err_body}")
+
+          content = body.get("output_text")
+          if not content:
+              output = body.get("output", [])
+              chunks = []
+              for item in output:
+                  for part in item.get("content", []):
+                      if part.get("type") in ("output_text", "text") and "text" in part:
+                          chunks.append(part["text"])
+              content = "".join(chunks)
+
+          if not content:
+              raise RuntimeError(f"OpenAI API response did not include output text. Body: {json.dumps(body)}")
+
+          with open(context_file, "w") as f:
+              f.write(content)
+
+          print(f"{context_file} written successfully.")
+          PYEOF
+
+      - name: Check for changes
+        id: diff
+        env:
+          CONTEXT_FILE: ${{ inputs.context_file }}
+        run: |
+          if git diff --quiet -- "$CONTEXT_FILE"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create branch, commit, and open PR
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONTEXT_FILE: ${{ inputs.context_file }}
+          BASE_BRANCH: ${{ inputs.base_branch }}
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          BRANCH_BASE="chore/context-update-${DATE}"
+          BRANCH="$BRANCH_BASE"
+
+          # Avoid non-fast-forward push failures on reruns/same-day runs by
+          # falling back to a unique branch name if today's branch already exists.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            TS=$(date +%H%M%S)
+            BRANCH="${BRANCH_BASE}-${TS}-${GITHUB_RUN_ATTEMPT}"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add "$CONTEXT_FILE"
+          git commit -m "chore: regenerate ${CONTEXT_FILE}"
+          git push -u origin "$BRANCH"
+
+          gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$BRANCH" \
+            --title "chore: regenerate ${CONTEXT_FILE} (${DATE})" \
+            --body "$(cat <<EOF
+          ## Automated ${CONTEXT_FILE} update
+
+          This PR was generated by the [Regenerate Context File](.github/workflows/regenerate-context.yaml) reusable workflow.
+
+          **Please review before merging:**
+          - Verify the changes accurately reflect the current state of the repo
+          - Check that no sensitive information was added
+          - Update the \`validated_by\` field in the Freshness section (if present) if you are approving this
+
+          If the changes look wrong, close this PR and update ${CONTEXT_FILE} manually.
+          EOF
+          )"
