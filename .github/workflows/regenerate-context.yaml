@@ -36,11 +36,10 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  statuses: write
 
 jobs:
   regenerate:
-    permissions:
-      statuses: write
     runs-on: ubuntu-latest
 
     steps:
