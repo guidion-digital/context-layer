@@ -39,6 +39,8 @@ permissions:
 
 jobs:
   regenerate:
+    permissions:
+      statuses: write
     runs-on: ubuntu-latest
 
     steps:
@@ -123,9 +125,7 @@ jobs:
           {repo_tree}
 
           Update {context_file} to reflect any changes. If nothing meaningful changed, return the file \
-          unchanged but update `last_reviewed` in the frontmatter and the last_reviewed bullet in \
-          the Freshness section to today's date, and set `generated_by` to `CI-generated`, if those \
-          fields exist in the file. If the current file contains a section titled \
+          unchanged. If the current file contains a section titled \
           `Recent changes (last 7 days of git log):`, preserve that section and keep it in the \
           output."""
 
@@ -199,6 +199,15 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Update freshness date
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
+          -f state=success \
+          -f context=freshness/CONTEXT.md \
+          -f description="checked $(date -u +%FT%TZ)"
 
       - name: Create branch, commit, and open PR
         if: steps.diff.outputs.changed == 'true'
