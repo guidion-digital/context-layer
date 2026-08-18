@@ -1,0 +1,32 @@
+name: Set Context Freshness Status On Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  statuses: write
+  contents: read
+
+jobs:
+  set-freshness-status:
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      startsWith(github.event.pull_request.head.ref, 'chore/context-update-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set freshness status on merged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          if [ -z "$SHA" ] || [ "$SHA" = "null" ]; then
+            SHA=$(gh api repos/${{ github.repository }}/commits/master --jq .sha)
+          fi
+
+          gh api repos/${{ github.repository }}/statuses/$SHA \
+            -f state=success \
+            -f context=freshness/CONTEXT.md \
+            -f description="checked $(date -u +%FT%TZ)" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

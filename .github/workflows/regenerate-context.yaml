@@ -36,7 +36,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  statuses: write
 
 jobs:
   regenerate:
@@ -199,19 +198,10 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update freshness date
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
-          -f state=success \
-          -f context=freshness/CONTEXT.md \
-          -f description="checked $(date -u +%FT%TZ)"
-
       - name: Create branch, commit, and open PR
         if: steps.diff.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           CONTEXT_FILE: ${{ inputs.context_file }}
           BASE_BRANCH: ${{ inputs.base_branch }}
         run: |
