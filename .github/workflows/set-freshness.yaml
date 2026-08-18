@@ -34,6 +34,6 @@ jobs:
 
           gh api repos/${{ github.repository }}/statuses/$SHA \
             -f state=success \
-            -f context=freshness/${{ inputs.context_name }} \
+            -f context=context-freshness/${{ inputs.context_name }} \
             -f description="checked $(date -u +%FT%TZ)" \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

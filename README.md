@@ -69,3 +69,11 @@ jobs:
 
 > [!NOTE]
 > If you need an `OPENAI_API_KEY`, you can add your repo to [this list](https://github.com/guidion-digital/code-infrastructure/blob/master/guidion-digital/organisation.tf#L166) for access to the Guidion organisation one.
+
+You can get freshness date out of your repo with something like:
+
+```sh
+gh api repos/guidion-digital/code-infrastructure/statuses/master | jq '[.[] | select(.context | startswith("context-freshness/"))]'
+```
+
+where `master` is your default branch.
