@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   regenerate:
-    uses: guidion-digital/context-layer/.github/workflows/regenerate-context.yaml@0.0.2
+    uses: guidion-digital/context-layer/.github/workflows/regenerate-context.yaml@0.0.3
     with:
       context_file: CONTEXT.md
       base_branch: master
@@ -36,7 +36,7 @@ jobs:
   set_freshness_when_unchanged:
     needs: regenerate
     if: needs.regenerate.outputs.changed == 'false'
-    uses: guidion-digital/context-layer/.github/workflows/set-freshness.yaml@0.0.2
+    uses: guidion-digital/context-layer/.github/workflows/set-freshness.yaml@0.0.3
     with:
       context_name: CONTEXT.md
       sha: ${{ github.sha }}
@@ -61,7 +61,7 @@ jobs:
       github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == github.event.repository.default_branch &&
       startsWith(github.event.pull_request.head.ref, 'chore/context-update-')
-    uses: guidion-digital/context-layer/.github/workflows/set-freshness.yaml@0.0.2
+    uses: guidion-digital/context-layer/.github/workflows/set-freshness.yaml@0.0.3
     with:
       context_name: CONTEXT.md
       sha: ${{ github.event.pull_request.merge_commit_sha }}
