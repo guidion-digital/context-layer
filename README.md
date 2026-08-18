@@ -17,10 +17,11 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  statuses: write
 
 jobs:
   regenerate:
-    uses: guidion-digital/context-layer/.github/workflows/regenerate-context.yaml@0.0.1
+    uses: guidion-digital/context-layer/.github/workflows/regenerate-context.yaml@0.0.2
     with:
       context_file: CONTEXT.md
       base_branch: master
@@ -31,6 +32,39 @@ jobs:
         repository at Guidion.
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+  set_freshness_when_unchanged:
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'false'
+    uses: guidion-digital/context-layer/.github/workflows/set-freshness.yaml@0.0.2
+    with:
+      context_name: CONTEXT.md
+      sha: ${{ github.sha }}
+```
+
+The above example includes a call to the `set-freshness` workflow, which sets a freshness date in your repo's metadata when no PR is generated for lack of meaningful changes to your context. You will also need the following workflow to update the freshness date when there _is_ a PR merge:
+
+```yaml
+name: Set Freshness Status On Context Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  set-freshness:
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      startsWith(github.event.pull_request.head.ref, 'chore/context-update-')
+    uses: guidion-digital/context-layer/.github/workflows/set-freshness.yaml@0.0.2
+    with:
+      context_name: CONTEXT.md
+      sha: ${{ github.event.pull_request.merge_commit_sha }}
 ```
 
 > [!NOTE]
