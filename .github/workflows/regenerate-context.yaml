@@ -2,6 +2,10 @@ name: Regenerate Context File
 
 on:
   workflow_call:
+    outputs:
+      changed:
+        description: "Whether CONTEXT regeneration produced changes"
+        value: ${{ jobs.regenerate.outputs.changed }}
     inputs:
       context_file:
         description: "Path (relative to repo root) of the context file to keep up to date."
@@ -39,6 +43,8 @@ permissions:
 
 jobs:
   regenerate:
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
     runs-on: ubuntu-latest
 
     steps:
