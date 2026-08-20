@@ -145,8 +145,10 @@ jobs:
           {repo_tree}
 
           Update {context_file} to reflect any changes. If nothing meaningful changed, return the file \
-          unchanged. If the current file contains a section titled \
-          `Recent changes (last 7 days of git log):`, preserve that section and keep it in the \
+          unchanged. If {context_file} _has_ changed, then update `last_reviewed` in the frontmatter and \
+          the last_reviewed bullet in the Freshness section to today's date, and set `generated_by` to \
+          `CI-generated`. If those fields do not exist, add them. If the current file contains a section \
+          titled `Recent changes (last 7 days of git log):`, preserve that section and keep it in the \
           output."""
 
           payload = {
