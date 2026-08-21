@@ -110,7 +110,7 @@ jobs:
               "existing structure, tone, and level of detail unless something has clearly changed. "
               ""
               "The frontmatter must include a `summary:` field, alongside domain, main_systems, "
-              "owner, criticality, last_reviewed, and review_confidence.
+              "owner, criticality, last_reviewed, and review_confidence."
               ""
               "The summary field is used by an LLM to get a good idea of what the repo is used for. "
               "The LLM uses this information to determine whether or not it has found something relevant "
