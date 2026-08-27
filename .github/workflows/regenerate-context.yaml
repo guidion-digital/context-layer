@@ -156,8 +156,6 @@ jobs:
 
           payload = {
               "model": os.environ['MODEL'],
-              "temperature": 0,
-              "top_p": 1,
               "input": [
                   {"role": "system", "content": system_prompt},
                   {"role": "user", "content": user_prompt},

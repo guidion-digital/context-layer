@@ -25,7 +25,6 @@ jobs:
       context_file: CONTEXT.md
       base_branch: master
       tree_dirs: ".,projects,cloud-infra"
-      model: gpt-5.3-codex
       prompt_addition: |
         You are a technical documentation maintainer for a Terraform/AWS infrastructure
         repository at Guidion.
