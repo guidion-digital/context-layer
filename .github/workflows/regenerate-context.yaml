@@ -96,9 +96,11 @@ jobs:
           python3 - <<'PYEOF'
           import json
           import os
-          import re
+          from datetime import datetime, timezone
           import urllib.request
           import urllib.error
+
+          from scripts.context_regen_postprocess import apply_deterministic_postprocessing
 
           context_file = os.environ['CONTEXT_FILE']
 
@@ -106,18 +108,22 @@ jobs:
               "You are a technical documentation maintainer responsible for keeping a repository's "
               f"{context_file} file accurate and up to date. You will be given the current file, a "
               "summary of recent git history, and the repository's directory structure. Update the "
-              "file so it accurately reflects the current state of the repository, preserving its "
-              "existing structure, tone, and level of detail unless something has clearly changed. "
+              "file so it accurately reflects the current state of the repository. "
+              ""
+              "Use a minimal-edit approach: keep unchanged text byte-for-byte whenever possible, and "
+              "only modify sections that are directly justified by the provided inputs. Do not "
+              "reformat, reorder, or rewrite content unless necessary to reflect real repository "
+              "changes or to fix clearly invalid syntax. "
               ""
               "The frontmatter must include a `summary:` field, alongside domain, main_systems, "
-              "owner, criticality, last_reviewed, and review_confidence."
+              "owner, criticality, last_reviewed, and review_confidence. "
               ""
               "The summary field is used by an LLM to get a good idea of what the repo is used for. "
               "The LLM uses this information to determine whether or not it has found something relevant "
-              "for it's task, and so should gather more context from this repo. Keep it in sync with "
+              "for its task, and so should gather more context from this repo. Keep it in sync with "
               "any changes to domain or main_systems. "
               ""
-              "Fields must well-formed YAML that can be parsed by an LLM or human without errors. "
+              "Fields must be well-formed YAML that can be parsed by an LLM or human without errors. "
               ""
               "Return ONLY the full updated file content — no explanation, no markdown code fence, "
               "no surrounding text of any kind."
@@ -146,14 +152,13 @@ jobs:
           {repo_tree}
 
           Update {context_file} to reflect any changes. If nothing meaningful changed, return the file \
-          unchanged. If {context_file} _has_ changed, then update `last_reviewed` in the frontmatter and \
-          the last_reviewed bullet in the Freshness section to today's date, and set `generated_by` to \
-          `CI-generated`. If those fields do not exist, add them. If the current file contains a section \
-          titled `Recent changes (last 7 days of git log):`, preserve that section and keep it in the \
-          output."""
+          unchanged. If the current file contains a section titled \
+          `Recent changes (last 7 days of git log):`, preserve that section and keep it in the output."""
 
           payload = {
               "model": os.environ['MODEL'],
+              "temperature": 0,
+              "top_p": 1,
               "input": [
                   {"role": "system", "content": system_prompt},
                   {"role": "user", "content": user_prompt},
@@ -189,22 +194,13 @@ jobs:
           if not content:
               raise RuntimeError(f"OpenAI API response did not include output text. Body: {json.dumps(body)}")
 
-          # Keep the recent-change summary deterministic if the source file already has it.
-          recent_header = "Recent changes (last 7 days of git log):"
-          if recent_header in context_md:
-              recent_body = git_log or "(no commits in the last 7 days)"
-              recent_block = f"{recent_header}\n{recent_body}"
-              section_pattern = re.compile(
-                  rf"{re.escape(recent_header)}\n.*?(?=\n## |\Z)",
-                  re.DOTALL,
-              )
-
-              if section_pattern.search(content):
-                  content = section_pattern.sub(recent_block, content, count=1)
-              else:
-                  content = content.rstrip() + "\n\n" + recent_block
-
-          content = content.rstrip() + "\n"
+          today = datetime.now(timezone.utc).date().isoformat()
+          content = apply_deterministic_postprocessing(
+              source_md=context_md,
+              generated_md=content,
+              git_log=git_log,
+              today_iso=today,
+          )
 
           with open(context_file, "w") as f:
               f.write(content)

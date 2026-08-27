@@ -35,3 +35,13 @@ jobs:
 
 > [!NOTE]
 > If you need an `OPENAI_API_KEY`, you can add your repo to [this list](https://github.com/guidion-digital/code-infrastructure/blob/master/guidion-digital/organisation.tf#L166) for access to the Guidion organisation one.
+
+## Local determinism test
+
+To validate the deterministic post-processing logic used by the context regenerator, run:
+
+```sh
+python3 -m unittest tests/test_context_regen_postprocess.py -v
+```
+
+This test suite is also run in CI via `.github/workflows/test-context-regenerator.yaml`.

@@ -1,0 +1,26 @@
+name: Test context regenerator determinism
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/regenerate-context.yaml'
+      - 'scripts/context_regen_postprocess.py'
+      - 'tests/test_context_regen_postprocess.py'
+  push:
+    branches:
+      - acc
+    paths:
+      - '.github/workflows/regenerate-context.yaml'
+      - 'scripts/context_regen_postprocess.py'
+      - 'tests/test_context_regen_postprocess.py'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run deterministic post-processing tests
+        run: python3 -m unittest tests/test_context_regen_postprocess.py -v
