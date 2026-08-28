@@ -215,6 +215,36 @@ jobs:
           with open('.tmp/repo-tree.txt', 'r', encoding='utf-8') as f:
               repo_tree = f.read()
 
+          required_h2_headings = [
+              "## Overview",
+              "## Purpose and responsibilities",
+              "## Source of truth / data ownership",
+              "## External integrations",
+              "## APIs exposed",
+              "## APIs / services consumed",
+              "## Deployment",
+              "## Architectural notes and key decisions",
+              "## Known risks / fragile areas",
+              "## AI assistant guidance",
+              "## Roadmap / active migrations",
+              "## Freshness",
+          ]
+
+          template_frontmatter_fields = [
+              "repo",
+              "project_name",
+              "owner",
+              "domain",
+              "criticality",
+              "summary",
+              "main_stack",
+              "main_systems",
+              "last_reviewed",
+              "review_confidence",
+              "generated_by",
+              "validated_by",
+          ]
+
           existing_chars = len(context_md.strip())
           existing_h2_count = len(re.findall(r"(?m)^##\s+", context_md))
 
@@ -237,6 +267,12 @@ jobs:
           If an existing file is present and substantial, preserve section coverage and level of detail.
           Do not replace detailed sections with generic summaries. Keep key headings/tables/lists unless \
           the provided inputs clearly justify removal.
+
+          Required frontmatter fields (must exist):
+          {', '.join(template_frontmatter_fields)}
+
+          Required H2 sections (must exist, even if value is n/a with one-line explanation):
+          {chr(10).join(required_h2_headings)}
 
           If the current file contains a section titled `Recent changes (last 7 days of git log):`, \
           preserve that section and keep it in the output."""
@@ -335,6 +371,24 @@ jobs:
           content = normalize_newline(content)
 
           source_normalized = normalize_newline(context_md)
+
+          def count_h2(md: str) -> int:
+              return len(re.findall(r"(?m)^##\s+", md))
+
+          def present_required_h2(md: str, required: list[str]) -> int:
+              return sum(1 for h in required if h in md)
+
+          # Quality gate: if we already have a substantial context file, reject outputs
+          # that lose too much structure/detail.
+          source_substantial = len(source_normalized.strip()) >= 2500 and count_h2(source_normalized) >= 10
+          generated_too_small = len(content.strip()) < int(len(source_normalized.strip()) * 0.7)
+          generated_h2_lossy = count_h2(content) < max(8, int(count_h2(source_normalized) * 0.7))
+          required_h2_missing = present_required_h2(content, required_h2_headings) < max(8, len(required_h2_headings) - 2)
+
+          if source_substantial and (generated_too_small or generated_h2_lossy or required_h2_missing):
+              print("Generated output failed quality gate; preserving existing context content.")
+              content = source_normalized
+
           model_changed = content != source_normalized
 
           if model_changed:
