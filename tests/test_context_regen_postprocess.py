@@ -1,6 +1,9 @@
 import unittest
 
-from scripts.context_regen_postprocess import apply_deterministic_postprocessing
+from scripts.context_regen_postprocess import (
+    apply_deterministic_postprocessing,
+    upsert_frontmatter_field,
+)
 
 
 TODAY = "2026-08-27"
@@ -116,6 +119,20 @@ model text
         )
 
         self.assertIn("Recent changes (last 7 days of git log):\nabc123 Update docs", out)
+
+    def test_upsert_frontmatter_field_sets_repo_deterministically(self):
+        md = """---
+repo: UNSET
+owner: Cinfra
+---
+
+# Context
+"""
+
+        out = upsert_frontmatter_field(md, "repo", "guidion-digital/code-infrastructure")
+
+        self.assertIn("repo: guidion-digital/code-infrastructure", out)
+        self.assertNotIn("repo: UNSET", out)
 
     def test_transform_is_idempotent(self):
         source = """---

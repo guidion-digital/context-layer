@@ -180,7 +180,11 @@ jobs:
           import urllib.error
 
           context_file = os.environ['CONTEXT_FILE']
+          repo_name = os.environ.get('GITHUB_REPOSITORY', '').strip()
+          if not repo_name:
+              raise RuntimeError("GITHUB_REPOSITORY is required for canonical `repo` metadata")
           repo_owner = os.environ.get('REPO_OWNER', '').strip()
+          repo_constraint = f"- Set frontmatter `repo` exactly to: {repo_name}"
           owner_constraint = f"- Set frontmatter `owner` exactly to: {repo_owner}"
 
           system_prompt = (
@@ -280,6 +284,7 @@ jobs:
           {', '.join(template_frontmatter_fields)}
 
           Canonical metadata constraints:
+          {repo_constraint}
           {owner_constraint}
 
           Required H2 sections (must exist, even if value is n/a with one-line explanation):
@@ -381,6 +386,7 @@ jobs:
           content = replace_recent_changes_if_present(context_md, content, git_log)
           content = normalize_newline(content)
 
+          content = upsert_frontmatter_field(content, "repo", repo_name)
           content = upsert_frontmatter_field(content, "owner", repo_owner)
 
           source_normalized = normalize_newline(context_md)
