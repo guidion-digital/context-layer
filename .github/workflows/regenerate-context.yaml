@@ -26,7 +26,7 @@ on:
         description: "OpenAI model to use for regenerating the context file."
         required: false
         type: string
-        default: "gpt-5.6-luna"
+        default: "gpt-5.6"
       prompt_addition:
         description: "Optional extra instructions appended to the default system prompt (e.g. repo-specific conventions)."
         required: false
@@ -65,7 +65,9 @@ jobs:
 
           if [ ! -f "$CONTEXT_FILE" ]; then
             LOWER_CONTEXT_FILE="$(printf '%s' "$CONTEXT_FILE" | tr '[:upper:]' '[:lower:]')"
-            CASE_MATCHES="$(git ls-files | awk -v target="$LOWER_CONTEXT_FILE" 'tolower($0)==target {print}')"
+            CASE_MATCHES="$(find . -path ./.git -prune -o -type f -print \
+              | sed 's#^\./##' \
+              | awk -v target="$LOWER_CONTEXT_FILE" 'tolower($0)==target {print}')"
             CASE_MATCH_COUNT="$(printf '%s\n' "$CASE_MATCHES" | sed '/^$/d' | wc -l | tr -d ' ')"
 
             if [ "$CASE_MATCH_COUNT" -gt 1 ]; then
@@ -77,7 +79,7 @@ jobs:
             if [ "$CASE_MATCH_COUNT" -eq 1 ]; then
               CASE_MISMATCH_PATH="$(printf '%s\n' "$CASE_MATCHES" | sed -n '1p')"
               if [ "$CASE_MISMATCH_PATH" != "$CONTEXT_FILE" ]; then
-                echo "Found case-mismatched tracked file ${CASE_MISMATCH_PATH}; forcing regeneration to canonical path ${CONTEXT_FILE}."
+                echo "Found case-mismatched file ${CASE_MISMATCH_PATH}; forcing regeneration to canonical path ${CONTEXT_FILE}."
                 echo "case_mismatch_path=${CASE_MISMATCH_PATH}" >> "$GITHUB_OUTPUT"
               fi
             else
@@ -179,18 +181,20 @@ jobs:
               "summary of recent git history, and the repository's directory structure. Update the "
               "file so it accurately reflects the current state of the repository. "
               ""
-              "Use a minimal-edit approach: keep unchanged text byte-for-byte whenever possible, and "
-              "only modify sections that are directly justified by the provided inputs. Do not "
-              "reformat, reorder, or rewrite content unless necessary to reflect real repository "
-              "changes or to fix clearly invalid syntax. "
+              "Use a strict minimal-edit approach: preserve unchanged text byte-for-byte whenever "
+              "possible. Only modify sections directly justified by the provided inputs. Do not "
+              "reformat, reorder, rename headings, or compress detailed sections into short summaries "
+              "unless required by real repository changes or to fix invalid syntax. "
+              ""
+              "When an existing context file is substantial, preserve its structure, section coverage, "
+              "and level of detail. Avoid dropping tables, lists, caveats, and architecture notes unless "
+              "the inputs clearly show they are obsolete. "
               ""
               "The frontmatter must include a `summary:` field, alongside domain, main_systems, "
               "owner, criticality, last_reviewed, and review_confidence. "
               ""
-              "The summary field is used by an LLM to get a good idea of what the repo is used for. "
-              "The LLM uses this information to determine whether or not it has found something relevant "
-              "for its task, and so should gather more context from this repo. Keep it in sync with "
-              "any changes to domain or main_systems. "
+              "The summary field is used by an LLM to decide whether this repository is relevant; keep "
+              "it aligned with domain and main_systems. "
               ""
               "Fields must be well-formed YAML that can be parsed by an LLM or human without errors. "
               ""
@@ -211,6 +215,9 @@ jobs:
           with open('.tmp/repo-tree.txt', 'r', encoding='utf-8') as f:
               repo_tree = f.read()
 
+          existing_chars = len(context_md.strip())
+          existing_h2_count = len(re.findall(r"(?m)^##\s+", context_md))
+
           user_prompt = f"""Current {context_file}:
           {context_md}
 
@@ -220,9 +227,19 @@ jobs:
           Current repo structure:
           {repo_tree}
 
+          Existing file stats:
+          - characters: {existing_chars}
+          - H2 headings: {existing_h2_count}
+
           Update {context_file} to reflect any changes. If nothing meaningful changed, return the file \
-          unchanged. If the current file contains a section titled \
-          `Recent changes (last 7 days of git log):`, preserve that section and keep it in the output."""
+          unchanged.
+
+          If an existing file is present and substantial, preserve section coverage and level of detail.
+          Do not replace detailed sections with generic summaries. Keep key headings/tables/lists unless \
+          the provided inputs clearly justify removal.
+
+          If the current file contains a section titled `Recent changes (last 7 days of git log):`, \
+          preserve that section and keep it in the output."""
 
           payload = {
               "model": os.environ['MODEL'],
@@ -385,7 +402,11 @@ jobs:
           git checkout -b "$BRANCH"
 
           if [ -n "$CASE_MISMATCH_PATH" ] && [ "$CASE_MISMATCH_PATH" != "$CONTEXT_FILE" ]; then
-            git rm -- "$CASE_MISMATCH_PATH"
+            if git ls-files --error-unmatch -- "$CASE_MISMATCH_PATH" >/dev/null 2>&1; then
+              git rm -- "$CASE_MISMATCH_PATH"
+            else
+              rm -f -- "$CASE_MISMATCH_PATH"
+            fi
           fi
 
           git add "$CONTEXT_FILE"
