@@ -340,16 +340,24 @@ jobs:
         id: diff
         env:
           CONTEXT_FILE: ${{ inputs.context_file }}
+          CASE_MISMATCH_PATH: ${{ steps.guard.outputs.case_mismatch_path }}
         run: |
           if [ "${{ steps.guard.outputs.should_run }}" != "true" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          if git diff --quiet -- "$CONTEXT_FILE"; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
+          paths=("$CONTEXT_FILE")
+          if [ -n "$CASE_MISMATCH_PATH" ] && [ "$CASE_MISMATCH_PATH" != "$CONTEXT_FILE" ]; then
+            paths+=("$CASE_MISMATCH_PATH")
+          fi
+
+          # Use porcelain status instead of `git diff --quiet` so untracked files
+          # (e.g. first-time creation of AI/CONTEXT.md) are detected.
+          if [ -n "$(git status --porcelain -- "${paths[@]}")" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create branch, commit, and open PR
