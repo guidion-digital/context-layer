@@ -4,7 +4,7 @@ The [Guidion Context Layer](https://guidiondev.atlassian.net/wiki/spaces/DIG/pag
 
 # Re-usable Workflow Usage
 
-You can give your repos a `CONTEXT.md` with the re-usable workflow found in this repo. Example usage:
+You can give your repos a `CONTEXT.md` with the re-usable workflow found in this repo. Example usage (see [workflow](.github/workflows/regenerate-context.yaml) for all possible inputs):
 
 ```yaml
 name: Regenerate CONTEXT.md
@@ -22,9 +22,8 @@ jobs:
   regenerate:
     uses: guidion-digital/context-layer/.github/workflows/regenerate-context.yaml@CHECK_LATEST_TAG
     with:
-      context_file: CONTEXT.md
       base_branch: master
-      tree_dirs: ".,projects"
+      tree_dirs: "."
       repo_owner: "Cinfra"
       prompt_addition: |
         You are a technical documentation maintainer for a Terraform/AWS infrastructure
