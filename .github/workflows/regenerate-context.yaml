@@ -13,10 +13,10 @@ on:
         type: string
         default: "AI/CONTEXT.md"
       base_branch:
-        description: "Branch to check out and open the pull request against."
+        description: "Optional branch override for checkout and PR base. Defaults to the repository default branch when empty."
         required: false
         type: string
-        default: "acc"
+        default: ""
       tree_dirs:
         description: 'Comma-separated list of directories (relative to repo root) to summarize for the model. Use "." for the repo root.'
         required: false
@@ -56,7 +56,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.base_branch }}
+          ref: ${{ inputs.base_branch != '' && inputs.base_branch || github.event.repository.default_branch }}
           fetch-depth: 0
 
       - name: Check for non-automation commits since last context PR merge
@@ -456,7 +456,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CONTEXT_FILE: ${{ inputs.context_file }}
           CASE_MISMATCH_PATH: ${{ steps.guard.outputs.case_mismatch_path }}
-          BASE_BRANCH: ${{ inputs.base_branch }}
+          BASE_BRANCH: ${{ inputs.base_branch != '' && inputs.base_branch || github.event.repository.default_branch }}
         run: |
           DATE=$(date +%Y-%m-%d)
           BRANCH_BASE="chore/context-update-${DATE}"

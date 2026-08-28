@@ -22,7 +22,6 @@ jobs:
   regenerate:
     uses: guidion-digital/context-layer/.github/workflows/regenerate-context.yaml@CHECK_LATEST_TAG
     with:
-      base_branch: master
       tree_dirs: "."
       repo_owner: "Cinfra"
       prompt_addition: |
