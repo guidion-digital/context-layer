@@ -61,8 +61,29 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "case_mismatch_path=" >> "$GITHUB_OUTPUT"
+
           if [ ! -f "$CONTEXT_FILE" ]; then
-            echo "${CONTEXT_FILE} does not exist; forcing regeneration."
+            LOWER_CONTEXT_FILE="$(printf '%s' "$CONTEXT_FILE" | tr '[:upper:]' '[:lower:]')"
+            CASE_MATCHES="$(git ls-files | awk -v target="$LOWER_CONTEXT_FILE" 'tolower($0)==target {print}')"
+            CASE_MATCH_COUNT="$(printf '%s\n' "$CASE_MATCHES" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+            if [ "$CASE_MATCH_COUNT" -gt 1 ]; then
+              echo "Multiple case-insensitive matches found for ${CONTEXT_FILE}; please clean up manually:" >&2
+              printf '%s\n' "$CASE_MATCHES" >&2
+              exit 1
+            fi
+
+            if [ "$CASE_MATCH_COUNT" -eq 1 ]; then
+              CASE_MISMATCH_PATH="$(printf '%s\n' "$CASE_MATCHES" | sed -n '1p')"
+              if [ "$CASE_MISMATCH_PATH" != "$CONTEXT_FILE" ]; then
+                echo "Found case-mismatched tracked file ${CASE_MISMATCH_PATH}; forcing regeneration to canonical path ${CONTEXT_FILE}."
+                echo "case_mismatch_path=${CASE_MISMATCH_PATH}" >> "$GITHUB_OUTPUT"
+              fi
+            else
+              echo "${CONTEXT_FILE} does not exist; forcing regeneration."
+            fi
+
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -99,12 +120,15 @@ jobs:
         id: context
         env:
           CONTEXT_FILE: ${{ inputs.context_file }}
+          CASE_MISMATCH_PATH: ${{ steps.guard.outputs.case_mismatch_path }}
           TREE_DIRS: ${{ inputs.tree_dirs }}
         run: |
           mkdir -p .tmp
 
           if [ -f "$CONTEXT_FILE" ]; then
             cp "$CONTEXT_FILE" .tmp/context.md
+          elif [ -n "$CASE_MISMATCH_PATH" ] && [ -f "$CASE_MISMATCH_PATH" ]; then
+            cp "$CASE_MISMATCH_PATH" .tmp/context.md
           else
             : > .tmp/context.md
           fi
@@ -333,6 +357,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CONTEXT_FILE: ${{ inputs.context_file }}
+          CASE_MISMATCH_PATH: ${{ steps.guard.outputs.case_mismatch_path }}
           BASE_BRANCH: ${{ inputs.base_branch }}
         run: |
           DATE=$(date +%Y-%m-%d)
@@ -350,6 +375,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git checkout -b "$BRANCH"
+
+          if [ -n "$CASE_MISMATCH_PATH" ] && [ "$CASE_MISMATCH_PATH" != "$CONTEXT_FILE" ]; then
+            git rm -- "$CASE_MISMATCH_PATH"
+          fi
+
           git add "$CONTEXT_FILE"
           git commit -m "chore: regenerate ${CONTEXT_FILE}"
           git push -u origin "$BRANCH"
