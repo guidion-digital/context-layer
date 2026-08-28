@@ -24,7 +24,8 @@ jobs:
     with:
       context_file: CONTEXT.md
       base_branch: master
-      tree_dirs: ".,projects,cloud-infra"
+      tree_dirs: ".,projects"
+      repo_owner: "Cinfra"
       prompt_addition: |
         You are a technical documentation maintainer for a Terraform/AWS infrastructure
         repository at Guidion.

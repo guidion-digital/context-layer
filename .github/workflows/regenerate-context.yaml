@@ -22,6 +22,11 @@ on:
         required: false
         type: string
         default: "."
+      repo_owner:
+        description: "Who owns the repo?"
+        required: false
+        type: string
+        default: "UNSET — please set this in the workflow call"
       model:
         description: "OpenAI model to use for regenerating the context file."
         required: false
@@ -162,6 +167,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CONTEXT_FILE: ${{ inputs.context_file }}
+          REPO_OWNER: ${{ inputs.repo_owner }}
           MODEL: ${{ inputs.model }}
           PROMPT_ADDITION: ${{ inputs.prompt_addition }}
         run: |
@@ -174,6 +180,8 @@ jobs:
           import urllib.error
 
           context_file = os.environ['CONTEXT_FILE']
+          repo_owner = os.environ.get('REPO_OWNER', '').strip()
+          owner_constraint = f"- Set frontmatter `owner` exactly to: {repo_owner}"
 
           system_prompt = (
               "You are a technical documentation maintainer responsible for keeping a repository's "
@@ -270,6 +278,9 @@ jobs:
 
           Required frontmatter fields (must exist):
           {', '.join(template_frontmatter_fields)}
+
+          Canonical metadata constraints:
+          {owner_constraint}
 
           Required H2 sections (must exist, even if value is n/a with one-line explanation):
           {chr(10).join(required_h2_headings)}
@@ -369,6 +380,8 @@ jobs:
 
           content = replace_recent_changes_if_present(context_md, content, git_log)
           content = normalize_newline(content)
+
+          content = upsert_frontmatter_field(content, "owner", repo_owner)
 
           source_normalized = normalize_newline(context_md)
 
