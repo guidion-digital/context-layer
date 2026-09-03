@@ -118,7 +118,7 @@ jobs:
       - name: Gather context and regenerate
         id: regenerate
         if: steps.guard.outputs.should_run == 'true'
-        uses: guidion-digital/context-layer@0.0.17
+        uses: guidion-digital/context-layer@actions
         with:
           context_file: ${{ inputs.context_file }}
           tree_dirs: ${{ inputs.tree_dirs }}
