@@ -1,0 +1,95 @@
+name: Regenerate context file
+description: >-
+  Gather a repository's context inputs and regenerate its context file with the OpenAI API.
+  Runs against the checked-out repository in the current working directory.
+
+# This action exists so the regeneration logic has exactly one copy. It used to be inlined as
+# a `python3 - <<'PYEOF'` heredoc inside .github/workflows/regenerate-context.yaml *and* kept
+# as scripts/_regenerator.py for a second caller, and the two drifted.
+#
+# A reusable workflow cannot load a file from its own repository: `actions/checkout` and any
+# `./`-relative `uses:` both resolve against the *calling* repo. A remote composite action
+# does not have that problem -- GitHub fetches this repository into the runner's action
+# directory, separately from the workspace, and $GITHUB_ACTION_PATH points at it. Because this
+# action.yml sits at the repo root, $GITHUB_ACTION_PATH is the root, so scripts/ can stay
+# where the tests and a manual local run already expect it.
+#
+# Callers need no extra token: this is fetched under the same repository Actions-access grant
+# that already lets them resolve .github/workflows/regenerate-context.yaml.
+
+inputs:
+  context_file:
+    description: "Path (relative to repo root) of the context file to keep up to date."
+    required: false
+    default: "AI/CONTEXT.md"
+  tree_dirs:
+    description: 'Comma-separated list of directories (relative to repo root) to summarize for the model. Use "." for the repo root.'
+    required: false
+    default: "."
+  tree_depth:
+    description: "How many levels below each entry in tree_dirs to list. 2 stops above the environment directories in a monorepo (`projects/web` but not `projects/web/development`), which produces noticeably vaguer context files. Raising this is usually better than naming deeper directories by hand in tree_dirs."
+    required: false
+    default: "3"
+  repo_owner:
+    description: "Who owns the repo?"
+    required: false
+    default: "UNSET — please set this in the workflow call"
+  model:
+    description: "OpenAI model to use for regenerating the context file."
+    required: false
+    default: "gpt-5.6"
+  prompt_addition:
+    description: "Optional extra instructions appended to the default system prompt (e.g. repo-specific conventions)."
+    required: false
+    default: ""
+  openai_api_key:
+    description: "API key for the OpenAI account used to regenerate the context file."
+    required: true
+
+outputs:
+  case_variant:
+    description: >-
+      A tracked path differing from context_file only by case, if one exists, so a caller can
+      drop the stray spelling. Empty when there is none.
+    value: ${{ steps.gather.outputs.case_variant }}
+
+runs:
+  using: composite
+  steps:
+    - name: Gather repo context
+      id: gather
+      shell: bash
+      env:
+        CONTEXT_FILE: ${{ inputs.context_file }}
+        TREE_DIRS: ${{ inputs.tree_dirs }}
+        TREE_DEPTH: ${{ inputs.tree_depth }}
+      run: |
+        set -euo pipefail
+        python3 "$GITHUB_ACTION_PATH/scripts/gather_context.py" \
+          --context-file "$CONTEXT_FILE" \
+          --tree-dirs "$TREE_DIRS" \
+          --tree-depth "$TREE_DEPTH"
+
+    # The key reaches the script through the environment, never interpolated into the `run:`
+    # body: an expression expanded into a script lands on a process command line, readable by
+    # anything else on the runner. tests/test_regenerator_wiring.py enforces that shape.
+    #
+    # ::add-mask:: because masking follows the *value*, not the input name. A caller passing
+    # `secrets.OPENAI_API_KEY` gets masking for free, but one passing a `vars.` entry or a
+    # literal does not -- and that is the caller's mistake to make, not theirs to pay for.
+    - name: Regenerate context file
+      shell: bash
+      env:
+        CONTEXT_FILE: ${{ inputs.context_file }}
+        REPO_OWNER: ${{ inputs.repo_owner }}
+        MODEL: ${{ inputs.model }}
+        PROMPT_ADDITION: ${{ inputs.prompt_addition }}
+        OPENAI_API_KEY: ${{ inputs.openai_api_key }}
+      run: |
+        set -euo pipefail
+
+        if [ -n "${OPENAI_API_KEY:-}" ]; then
+          echo "::add-mask::$OPENAI_API_KEY"
+        fi
+
+        python3 "$GITHUB_ACTION_PATH/scripts/_regenerator.py"

@@ -4,15 +4,17 @@ on:
   pull_request:
     paths:
       - '.github/workflows/regenerate-context.yaml'
-      - 'scripts/context_regen_postprocess.py'
-      - 'tests/test_context_regen_postprocess.py'
+      - 'action.yml'
+      - 'scripts/*.py'
+      - 'tests/*.py'
   push:
     branches:
       - acc
     paths:
       - '.github/workflows/regenerate-context.yaml'
-      - 'scripts/context_regen_postprocess.py'
-      - 'tests/test_context_regen_postprocess.py'
+      - 'action.yml'
+      - 'scripts/*.py'
+      - 'tests/*.py'
 
 jobs:
   test:
@@ -24,3 +26,11 @@ jobs:
 
       - name: Run deterministic post-processing tests
         run: python3 -m unittest tests/test_context_regen_postprocess.py -v
+
+      - name: Run context gathering tests
+        run: python3 -m unittest tests/test_gather_context.py -v
+
+      # The reusable workflow reaches the regenerator through this repo's root action.yml.
+      # This asserts that wiring holds: pinned tag, matching inputs, no re-inlined Python.
+      - name: Run regenerator wiring tests
+        run: python3 -m unittest tests/test_regenerator_wiring.py -v
