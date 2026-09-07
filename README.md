@@ -89,7 +89,7 @@ That is what carries the shape a heading list cannot: table columns, the `Does:`
 
 The required-headings and required-fields lists stay as Python literals rather than being parsed from the template at runtime, because `required_h2_headings` also feeds the quality gate, and a safety check should not depend on parsing a human-edited markdown file. `tests/test_regenerator_wiring.py` fails the build when they drift from the template.
 
-The `Recent changes (last 7 days of git log):` block is the one section the code owns outright: the model is told not to write it, and `ensure_recent_changes_section` appends or rewrites it from the real git log on every run. Changes confined to that block do not count as a change for freshness purposes — a moving 7-day window is not a review.
+The generated file carries no copy of the git log. One used to be appended to every file as a `Recent changes (last 7 days of git log):` block, which rewrote itself on every run and opened a PR carrying nothing git does not already record. `strip_recent_changes` now deletes such a block wherever it still finds one, and is itself removable once no consumer repo has one left. The log remains a model *input* — see [What the model is given](#what-the-model-is-given).
 
 The workflow reaches the action as `uses: guidion-digital/context-layer@<tag>`, not `./`. A reusable workflow cannot load a file from its own repository — `actions/checkout` and any relative `uses:` resolve against the _calling_ repo — but a remote composite action is fetched into the runner's action directory, separately from the workspace, and `$GITHUB_ACTION_PATH` points at it. Since `action.yml` sits at the repo root, that path _is_ the repo root, so the scripts stay where the tests and a manual local run already expect them. Callers need no extra token: the fetch uses the same repository Actions-access grant that already lets them resolve the reusable workflow.
 
@@ -140,7 +140,7 @@ python3 -m unittest tests/test_context_regen_postprocess.py tests/test_gather_co
 
 | Suite                               | Covers                                                                                                                                                   |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_context_regen_postprocess.py` | deterministic post-processing: freshness bullets, frontmatter stamping, recent-changes replacement                                                       |
+| `test_context_regen_postprocess.py` | deterministic post-processing: freshness bullets, frontmatter stamping, legacy git-log block removal                                                    |
 | `test_gather_context.py`            | the `.tmp/` inputs: READMEs, git log, tree depth, case-variant detection                                                                                 |
 | `test_regenerator_wiring.py`        | the workflow → action → scripts wiring, secret handling, template conformance, the skeleton stripper, and helper parity between the two remaining copies |
 

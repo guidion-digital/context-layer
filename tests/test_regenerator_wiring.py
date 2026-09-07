@@ -268,10 +268,13 @@ class WiringTests(unittest.TestCase):
 # production uses it, so it can drift unless something compares the two.
 
 HELPERS_START = "def normalize_newline("
-HELPERS_END = "content = ensure_recent_changes_section(content, git_log)"
+HELPERS_END = 'content = strip_recent_changes(content)'
 
 # The helper region is exec'd without the module's own preamble, so seed what it closes over.
-HELPERS_PREAMBLE = 'import re\nRECENT_HEADER = "Recent changes (last 7 days of git log):"\n'
+HELPERS_PREAMBLE = (
+    'import re\n'
+    'LEGACY_RECENT_HEADER = "Recent changes (last 7 days of git log):"\n'
+)
 
 # `template_skeleton` sits above the environment reads, so it can be lifted on its own.
 SKELETON_START = "def template_skeleton("
@@ -283,7 +286,7 @@ FRESHNESS_CASES = (
     "## Freshness\n\n- **Last reviewed:** 2026-01-01\n",
     "# Context\n\nNo freshness section here.\n",
     "## Freshness\n\n- **Last reviewed:** 2026-01-01\n\n"
-    "Recent changes (last 7 days of git log):\nolder entry\n",
+    "Recent changes (last 7 days of git log):\nolder entry\n",  # a legacy block, still stripped
     "## Freshness\n\n- **LAST REVIEWED :**  2026-01-01\n",
 )
 
@@ -365,15 +368,12 @@ class HelperParityTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assert_all_agree(lambda ns: ns["upsert_frontmatter_field"](md, key, value))
 
-    def test_recent_changes_helpers_agree_across_copies(self) -> None:
+    def test_strip_recent_changes_agrees_across_copies(self) -> None:
         with_block = "# Context\n\nRecent changes (last 7 days of git log):\nmodel invented this\n"
         without_block = "# Context\n\n## Freshness\n\n- **Last reviewed:** 2026-01-01\n"
 
         for md in (with_block, without_block):
             with self.subTest(md=md[:30]):
-                self.assert_all_agree(
-                    lambda ns: ns["ensure_recent_changes_section"](md, "abc feat: x")
-                )
                 self.assert_all_agree(lambda ns: ns["strip_recent_changes"](md))
 
 
@@ -527,16 +527,12 @@ class TemplateConformanceTests(unittest.TestCase):
         markdown -- and to a model copying the shape, which is how generated files kept
         flattening the delegation half of the boundary into prose.
         """
-        # The one label the code owns: its body is git log output, replaced on every run.
-        machine_owned = "Recent changes (last 7 days of git log):"
-
         lines = template_body_lines(self.template)
 
         for position, (number, stripped) in enumerate(lines):
             is_label = (
                 stripped.endswith(":")
                 and not stripped.startswith(("#", "|", "- ", "* "))
-                and stripped != machine_owned
             )
             if not is_label:
                 continue
@@ -602,10 +598,6 @@ class TemplateSkeletonTests(unittest.TestCase):
     def test_every_required_heading_survives(self) -> None:
         for heading in re.findall(r'"(## [^"]+)"', SCRIPT.read_text(encoding="utf-8")):
             self.assertIn(heading, self.skeleton)
-
-    def test_recent_changes_block_is_not_sent(self) -> None:
-        """The code owns that section; a model given it would paraphrase the log."""
-        self.assertNotIn("Recent changes (last 7 days of git log):", self.skeleton)
 
 
 class GatherCliTests(unittest.TestCase):

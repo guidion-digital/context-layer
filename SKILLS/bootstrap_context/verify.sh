@@ -142,32 +142,6 @@ for section in "Source of truth / data ownership" "External integrations" "APIs 
 done
 
 echo
-echo "Machine-maintained tail"
-
-HEADING='Recent changes (last 7 days of git log):'
-n=$(grep -cxF "$HEADING" "$CTX")
-case "$n" in
-  1) pass "log heading present exactly once, byte-identical" ;;
-  0) fail "missing literal heading '$HEADING' — the workflow will stop maintaining the section" ;;
-  *) fail "log heading appears $n times, expected once" ;;
-esac
-
-if [ "$n" = "1" ]; then
-  tail_body=$(sed -n "/^$(printf '%s' "$HEADING" | sed 's/[].[^$*\/]/\\&/g')$/,\$p" "$CTX")
-  if printf '%s' "$tail_body" | grep -qE '^```'; then
-    fail "log section is fenced — the workflow writes raw git log output, no fence"
-  else
-    pass "log section is unfenced"
-  fi
-  # heading should be the last section in the file
-  if printf '%s' "$tail_body" | grep -qE '^## '; then
-    fail "a '## ' section appears after the log heading — it must be last"
-  else
-    pass "log heading is the final section"
-  fi
-fi
-
-echo
 echo "Cited identifiers exist in tracked source"
 
 # Anything that looks like a concrete infrastructure identifier and appears in
@@ -175,9 +149,8 @@ echo "Cited identifiers exist in tracked source"
 SRC="$(mktemp)"; trap 'rm -f "$SRC" "$PROSE"' EXIT
 git ls-files -z | xargs -0 cat 2>/dev/null > "$SRC"
 
-# Exclude the machine-maintained tail: those are commit subjects, not claims.
 PROSE="$(mktemp)"
-sed "/^$(printf '%s' "$HEADING" | sed 's/[].[^$*\/]/\\&/g')$/,\$d" "$CTX" > "$PROSE"
+cp "$CTX" "$PROSE"
 
 check_ids() {
   local label="$1" pattern="$2"

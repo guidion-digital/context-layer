@@ -18,7 +18,10 @@ DEFAULT_REPO_OWNER = "UNSET — please set this"
 # *caller's* checkout, and a manual run happens from inside whichever repo is being updated.
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "CONTEXT_TEMPLATE.md"
 
-RECENT_HEADER = "Recent changes (last 7 days of git log):"
+# The heading of a git-log block that older revisions of this script appended to every
+# generated file. Nothing writes one any more; the constant exists so `strip_recent_changes`
+# can still find and delete a block a consumer repo committed while that behaviour was live.
+LEGACY_RECENT_HEADER = "Recent changes (last 7 days of git log):"
 
 # A bracketed span with any non-space content is a placeholder to drop. `[ ]` is not -- that is
 # the roadmap checkbox, which is shape the model should copy.
@@ -36,8 +39,8 @@ def template_skeleton(template_md: str) -> str:
     infrastructure repo's context file.
 
     So: keep the section comments, the `Does:` labels, the direction legend, table header
-    rows and the Freshness bullet style; drop the `[e.g. ...]` placeholders, the example table
-    rows, and the recent-changes block, which the code maintains and a model would paraphrase.
+    rows and the Freshness bullet style; drop the `[e.g. ...]` placeholders and the example
+    table rows.
     """
     def drop_placeholder(match: re.Match) -> str:
         return "..." if match.group(1).strip() else match.group(0)
@@ -45,7 +48,7 @@ def template_skeleton(template_md: str) -> str:
     lines: list[str] = []
     table_row = 0
 
-    for raw in template_md.split(RECENT_HEADER)[0].splitlines():
+    for raw in template_md.splitlines():
         stripped = raw.strip()
 
         if stripped.startswith("|"):
@@ -236,11 +239,7 @@ sections, table columns, labels and bullet styles, and heed the HTML comments. T
 markers are placeholders, never content -- replace them with facts about this repository, and
 never copy a placeholder through:
 
-{template_md}
-
-Do not write a `Recent changes (last 7 days of git log):` section. It is appended
-automatically from the real git log after you return, and anything you write there is
-discarded."""
+{template_md}"""
 
 payload = {
     "model": os.environ.get('MODEL', '').strip() or DEFAULT_MODEL,
@@ -283,50 +282,21 @@ def normalize_newline(md: str) -> str:
     return md.rstrip() + "\n"
 
 
-def format_git_log(git_log_text: str) -> str:
-    """Render `git log --oneline --stat` output as a markdown list.
-
-    Raw, the block renders as one run-together wall of text, because markdown collapses
-    single newlines inside a paragraph. `--stat` lines arrive indented by git, which is the
-    signal to nest them under the commit they belong to.
-    """
-    lines = []
-
-    for raw in git_log_text.splitlines():
-        if not raw.strip():
-            continue
-        lines.append(("  - " if raw[:1].isspace() else "- ") + raw.strip())
-
-    return "\n".join(lines)
-
-
 def recent_changes_pattern() -> re.Pattern:
-    return re.compile(rf"{re.escape(RECENT_HEADER)}\n.*?(?=\n## |\Z)", re.DOTALL)
-
-
-def ensure_recent_changes_section(generated_md: str, git_log_text: str) -> str:
-    """Append or rewrite the git-log block. Unconditional, by design.
-
-    This used to run only when the *existing* file already carried the header, so a file
-    generated from nothing never got one -- and never would, since the next run would find no
-    header either. Any repo getting its first context file was in that state, while
-    CONTEXT_TEMPLATE.md told humans the section was part of the shape.
-    """
-    recent_body = format_git_log(git_log_text) or "(no commits in the last 7 days)"
-    recent_block = f"{RECENT_HEADER}\n\n{recent_body}"
-    section_pattern = recent_changes_pattern()
-
-    if section_pattern.search(generated_md):
-        return section_pattern.sub(recent_block, generated_md, count=1)
-
-    return generated_md.rstrip() + "\n\n" + recent_block
+    return re.compile(rf"{re.escape(LEGACY_RECENT_HEADER)}\n.*?(?=\n## |\Z)", re.DOTALL)
 
 
 def strip_recent_changes(md: str) -> str:
-    """The document without its git-log block, for comparing two revisions of it.
+    """The document without the legacy git-log block.
 
-    A moving 7-day window rewrites that block on every run. Comparing it would report a change
-    nobody made, stamping `last_reviewed` on a file whose prose is untouched.
+    One-directional: the block is deleted wherever it is found and never written back. It was
+    a rolling 7-day window pasted into the file, which meant a PR opened on nearly every run
+    carrying nothing but commit subjects that git already records.
+
+    Applied to the model's output as well as the committed file, because a repo whose
+    committed file still carries a block hands it to the model as input, and the minimal-edit
+    instruction would otherwise have the model preserve it. Delete this once no consumer repo
+    has one left.
     """
     return recent_changes_pattern().sub("", md).rstrip() + "\n"
 
@@ -363,16 +333,8 @@ def freshness_bullet_patterns(key: str) -> tuple:
 
 
 def upsert_freshness_bullet(md: str, key: str, value: str) -> str:
-    """Set a Freshness bullet, keeping whichever spelling the file already uses.
-
-    The section body stops at the recent-changes header as well as the next H2 and EOF. That
-    block is the last thing in a template-shaped file and sits *inside* the Freshness section
-    as far as the heading regex is concerned, so without the bound an appended bullet lands
-    underneath the git log rather than among the bullets.
-    """
-    section_match = re.search(
-        rf"(?ms)^##\s+Freshness\s*$\n(.*?)(?=^##\s+|^{re.escape(RECENT_HEADER)}|\Z)", md
-    )
+    """Set a Freshness bullet, keeping whichever spelling the file already uses."""
+    section_match = re.search(r"(?ms)^##\s+Freshness\s*$\n(.*?)(?=^##\s+|\Z)", md)
     slug_pattern, prose_pattern = freshness_bullet_patterns(key)
     slug_line = f"- `{key}`: {value}"
     prose_line = f"- **{key.replace('_', ' ').capitalize()}:** {value}"
@@ -397,13 +359,12 @@ def upsert_freshness_bullet(md: str, key: str, value: str) -> str:
     append = "\n\n## Freshness\n" + slug_line + "\n"
     return md.rstrip("\n") + append
 
-content = ensure_recent_changes_section(content, git_log)
-content = normalize_newline(content)
+content = strip_recent_changes(content)
 
 content = upsert_frontmatter_field(content, "repo", repo_name)
 content = upsert_frontmatter_field(content, "owner", repo_owner)
 
-source_normalized = normalize_newline(context_md)
+source_normalized = strip_recent_changes(context_md)
 
 def count_h2(md: str) -> int:
     return len(re.findall(r"(?m)^##\s+", md))
@@ -422,7 +383,7 @@ if source_substantial and (generated_too_small or generated_h2_lossy or required
     print("Generated output failed quality gate; preserving existing context content.")
     content = source_normalized
 
-model_changed = strip_recent_changes(content) != strip_recent_changes(source_normalized)
+model_changed = content != source_normalized
 
 if model_changed:
     today = datetime.now(timezone.utc).date().isoformat()

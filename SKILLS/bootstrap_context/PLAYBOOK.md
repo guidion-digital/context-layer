@@ -130,19 +130,9 @@ Set `validated_by` to `none`. It is a parsed field, not a place for a sentence.
 
 If you change a metadata value that a previous generation had set — especially `criticality` — do not do it silently. Raise it in the PR as an explicit question for the owner.
 
-### The machine-maintained tail
+### Do not paste a git log into the file
 
-The file must end with exactly this shape — heading, blank line, the template's HTML comment, blank line, then the raw `git log` output with no code fence:
-
-```
-Recent changes (last 7 days of git log):
-
-<!-- ...the comment block from the template, unchanged... -->
-
-<output of: git log --oneline --stat --since="7 days ago">
-```
-
-The heading line must appear **exactly once** and be byte-identical, colon included: the regeneration workflow matches that literal string and replaces everything below it. Do not wrap the log in a fence, and do not put anything after it.
+The file ends at the Freshness section. Earlier revisions of the template asked for a `Recent changes (last 7 days of git log):` block after it; the regenerator no longer writes one and deletes it where it still finds one, because git already records that history and a rolling window rewrote the file on every run. Recent commits reach the regenerator as a prompt input instead.
 
 ## Step 4 — Seed AI/LessonsLearned.md
 
@@ -158,7 +148,7 @@ Run [verify.sh](./verify.sh) from the repo root:
 bash skills/bootstrap_context/verify.sh
 ```
 
-It checks template conformance, controlled vocabularies, the machine-maintained tail, and — most importantly — that **every identifier cited in the file actually exists in tracked source**. That last check catches invented ARNs and mistyped account IDs, the failure mode that most damages a reader's trust in everything else in the file.
+It checks template conformance, controlled vocabularies, and — most importantly — that **every identifier cited in the file actually exists in tracked source**. That last check catches invented ARNs and mistyped account IDs, the failure mode that most damages a reader's trust in everything else in the file.
 
 Fix what it reports. A clean run is not proof the content is right, only that it is well-formed and not fabricated.
 

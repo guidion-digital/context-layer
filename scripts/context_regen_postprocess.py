@@ -1,56 +1,30 @@
 import re
 
-RECENT_HEADER = "Recent changes (last 7 days of git log):"
+# The heading of a git-log block that older revisions of the regenerator appended to every
+# generated file. Nothing writes one any more; the constant exists so `strip_recent_changes`
+# can still find and delete a block a consumer repo committed while that behaviour was live.
+LEGACY_RECENT_HEADER = "Recent changes (last 7 days of git log):"
 
 
 def normalize_newline(md: str) -> str:
     return md.rstrip() + "\n"
 
 
-def format_git_log(git_log: str) -> str:
-    """Render `git log --oneline --stat` output as a markdown list.
-
-    Raw, the block renders as one run-together wall of text, because markdown collapses
-    single newlines inside a paragraph. `--stat` lines arrive indented by git, which is the
-    signal to nest them under the commit they belong to.
-    """
-    lines = []
-
-    for raw in git_log.splitlines():
-        if not raw.strip():
-            continue
-        lines.append(("  - " if raw[:1].isspace() else "- ") + raw.strip())
-
-    return "\n".join(lines)
-
-
 def recent_changes_pattern() -> re.Pattern:
-    return re.compile(rf"{re.escape(RECENT_HEADER)}\n.*?(?=\n## |\Z)", re.DOTALL)
-
-
-def ensure_recent_changes_section(generated_md: str, git_log: str) -> str:
-    """Append or rewrite the git-log block. Unconditional, by design.
-
-    This used to run only when the *existing* file already carried the header, so a file
-    generated from nothing never got one -- and never would, since the next run would find no
-    header either. Any repo getting its first context file was in that state, while
-    CONTEXT_TEMPLATE.md told humans the section was part of the shape.
-    """
-    recent_body = format_git_log(git_log) or "(no commits in the last 7 days)"
-    recent_block = f"{RECENT_HEADER}\n\n{recent_body}"
-    section_pattern = recent_changes_pattern()
-
-    if section_pattern.search(generated_md):
-        return section_pattern.sub(recent_block, generated_md, count=1)
-
-    return generated_md.rstrip() + "\n\n" + recent_block
+    return re.compile(rf"{re.escape(LEGACY_RECENT_HEADER)}\n.*?(?=\n## |\Z)", re.DOTALL)
 
 
 def strip_recent_changes(md: str) -> str:
-    """The document without its git-log block, for comparing two revisions of it.
+    """The document without the legacy git-log block.
 
-    A moving 7-day window rewrites that block on every run. Comparing it would report a change
-    nobody made, stamping `last_reviewed` on a file whose prose is untouched.
+    One-directional: the block is deleted wherever it is found and never written back. It was
+    a rolling 7-day window pasted into the file, which meant a PR opened on nearly every run
+    carrying nothing but commit subjects that git already records.
+
+    Applied to the model's output as well as the committed file, because a repo whose
+    committed file still carries a block hands it to the model as input, and the minimal-edit
+    instruction would otherwise have the model preserve it. Delete this once no consumer repo
+    has one left.
     """
     return recent_changes_pattern().sub("", md).rstrip() + "\n"
 
@@ -89,16 +63,8 @@ def freshness_bullet_patterns(key: str) -> tuple:
 
 
 def upsert_freshness_bullet(md: str, key: str, value: str) -> str:
-    """Set a Freshness bullet, keeping whichever spelling the file already uses.
-
-    The section body stops at the recent-changes header as well as the next H2 and EOF. That
-    block is the last thing in a template-shaped file and sits *inside* the Freshness section
-    as far as the heading regex is concerned, so without the bound an appended bullet lands
-    underneath the git log rather than among the bullets.
-    """
-    section_match = re.search(
-        rf"(?ms)^##\s+Freshness\s*$\n(.*?)(?=^##\s+|^{re.escape(RECENT_HEADER)}|\Z)", md
-    )
+    """Set a Freshness bullet, keeping whichever spelling the file already uses."""
+    section_match = re.search(r"(?ms)^##\s+Freshness\s*$\n(.*?)(?=^##\s+|\Z)", md)
     slug_pattern, prose_pattern = freshness_bullet_patterns(key)
     slug_line = f"- `{key}`: {value}"
     prose_line = f"- **{key.replace('_', ' ').capitalize()}:** {value}"
@@ -127,15 +93,13 @@ def upsert_freshness_bullet(md: str, key: str, value: str) -> str:
 def apply_deterministic_postprocessing(
     source_md: str,
     generated_md: str,
-    git_log: str,
     today_iso: str,
 ) -> str:
     """Normalize deterministic sections and freshness fields in model output."""
-    content = ensure_recent_changes_section(generated_md, git_log)
-    content = normalize_newline(content)
+    content = strip_recent_changes(generated_md)
 
-    source_normalized = normalize_newline(source_md)
-    model_changed = strip_recent_changes(content) != strip_recent_changes(source_normalized)
+    source_normalized = strip_recent_changes(source_md)
+    model_changed = content != source_normalized
 
     if model_changed:
         content = upsert_frontmatter_field(content, "last_reviewed", today_iso)
