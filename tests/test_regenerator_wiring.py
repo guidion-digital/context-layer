@@ -627,7 +627,7 @@ class GatherCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            for name in ("context.md", "readmes.txt", "git-log.txt", "repo-tree.txt"):
+            for name in ("context.md", "readmes.txt", "lessons.txt", "git-log.txt", "repo-tree.txt"):
                 self.assertTrue(repo.joinpath(".tmp", name).is_file(), f".tmp/{name} missing")
 
 

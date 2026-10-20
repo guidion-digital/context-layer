@@ -16,6 +16,10 @@ from pathlib import Path, PurePosixPath
 # corrected to this one rather than left alone.
 DEFAULT_CONTEXT_FILE = "AI/CONTEXT.md"
 
+# Optional, repo-maintained instructions for the regenerator: corrections to mistakes earlier
+# runs made. Most repos have none, so its absence is normal rather than an error.
+LESSONS_FILE = "AI/LessonsLearned.md"
+
 # How far below each listed directory to walk. Was hardcoded at 2, which stopped above the
 # environment directories in a monorepo -- `projects/web` but never `projects/web/development`
 # -- and produced noticeably vaguer context files. `tree_dirs` existed mostly to work around
@@ -112,6 +116,23 @@ def _write_readmes(repo_root: Path, tmp: Path) -> None:
                                            encoding="utf-8")
 
 
+def _write_lessons(repo_root: Path, tmp: Path) -> None:
+    """Copy the repo's lessons-learned file, if it has one, for the system prompt.
+
+    Tracked only, for the same reason as the READMEs: this text becomes *instructions*, so an
+    untracked local file must not be able to steer the output. Always written, empty when the
+    repo has no such file, so the regenerator can tell "none" from a stale `.tmp/`.
+    """
+    body = ""
+    if _git(repo_root, "ls-files", "--", LESSONS_FILE).strip():
+        try:
+            body = (repo_root / LESSONS_FILE).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError):
+            body = ""
+
+    tmp.joinpath("lessons.txt").write_text(body + "\n" if body else "", encoding="utf-8")
+
+
 def _write_git_log(repo_root: Path, tmp: Path) -> None:
     args = ["log", "--oneline", "--stat", "--since=7 days ago", "--invert-grep"]
     for pattern in AUTOMATION_GREPS:
@@ -201,7 +222,10 @@ def gather(
     tree_dirs: str = ".",
     tree_depth: int = DEFAULT_TREE_DEPTH,
 ) -> str | None:
-    """Write .tmp/{context.md,readmes.txt,git-log.txt,repo-tree.txt}. Returns the case variant."""
+    """Write .tmp/{context.md,readmes.txt,lessons.txt,git-log.txt,repo-tree.txt}.
+
+    Returns the case variant.
+    """
     repo_root = Path(repo_root)
     variant = find_case_variant(repo_root, context_file)
 
@@ -210,6 +234,7 @@ def gather(
 
     _write_context(repo_root, tmp, context_file, variant)
     _write_readmes(repo_root, tmp)
+    _write_lessons(repo_root, tmp)
     _write_git_log(repo_root, tmp)
     _write_repo_tree(repo_root, tmp, tree_dirs, tree_depth)
 

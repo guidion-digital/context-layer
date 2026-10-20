@@ -78,7 +78,7 @@ Callers only ever touch the reusable workflow above. Behind it, the actual work 
 ```
 CONTEXT_TEMPLATE.md                 the contract: sections, fields, table shapes, vocabularies
 action.yml                          composite action: runs the two scripts below
-scripts/gather_context.py           builds .tmp/{context.md,readmes.txt,git-log.txt,repo-tree.txt}
+scripts/gather_context.py           builds .tmp/{context.md,readmes.txt,lessons.txt,git-log.txt,repo-tree.txt}
 scripts/_regenerator.py             prompt, OpenAI call, deterministic post-processing
 .github/workflows/regenerate-context.yaml
                                     checkout, loop-breaker guard, `uses: action.yml`, PR
@@ -97,16 +97,19 @@ The workflow reaches the action as `uses: guidion-digital/context-layer@<tag>`, 
 
 ### What the model is given
 
-Four inputs, built by `gather_context.py` into `.tmp/`:
+Five inputs, built by `gather_context.py` into `.tmp/`:
 
 | Input           |                                                               |
 | --------------- | ------------------------------------------------------------- |
 | `context.md`    | the existing context file, or empty when there is none        |
 | `readmes.txt`   | every tracked `README.md`, in full, root first                |
+| `lessons.txt`   | the repo's `AI/LessonsLearned.md`, empty if it has none       |
 | `git-log.txt`   | seven days of `--oneline --stat`, automation commits excluded |
 | `repo-tree.txt` | a directory listing — file _names_ only                       |
 
-`readmes.txt` is the only input carrying file contents other than the context file itself. It exists because the tree lists names: the model could see that `projects/cloud-infra/networking/README.md` existed without reading a byte of the Transit Gateway explanation inside it, which is exactly where the best hand-written context files got their architectural notes. Discovered through `git ls-files`, so a local `terraform init` or a vendored dependency cannot inject text into the prompt. No cap — the largest README payload across the whole `guidion-digital` org is 8.7 KB.
+`readmes.txt` is the only input carrying file contents other than the context file and the lessons file. It exists because the tree lists names: the model could see that `projects/cloud-infra/networking/README.md` existed without reading a byte of the Transit Gateway explanation inside it, which is exactly where the best hand-written context files got their architectural notes. Discovered through `git ls-files`, so a local `terraform init` or a vendored dependency cannot inject text into the prompt. No cap — the largest README payload across the whole `guidion-digital` org is 8.7 KB.
+
+`lessons.txt` is how a repo corrects the regenerator without touching its caller workflow: anything in a tracked `AI/LessonsLearned.md` is appended to the system prompt as instructions, after `prompt_addition`. The file is optional, and a repo without one gets the default prompt unchanged. It goes in the system prompt rather than alongside the other inputs because the model cannot open files — an instruction to "read" the file would reach it as a name with no contents. Tracked files only, as with the READMEs, since this text steers the output.
 
 ### Tuning the directory listing
 
@@ -141,7 +144,7 @@ python3 -m unittest tests/test_context_regen_postprocess.py tests/test_gather_co
 | Suite                               | Covers                                                                                                                                                   |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `test_context_regen_postprocess.py` | deterministic post-processing: freshness bullets, frontmatter stamping, legacy git-log block removal                                                    |
-| `test_gather_context.py`            | the `.tmp/` inputs: READMEs, git log, tree depth, case-variant detection                                                                                 |
+| `test_gather_context.py`            | the `.tmp/` inputs: READMEs, lessons learned, git log, tree depth, case-variant detection                                                                                 |
 | `test_regenerator_wiring.py`        | the workflow → action → scripts wiring, secret handling, template conformance, the skeleton stripper, and helper parity between the two remaining copies |
 
 These suites also run in CI via `.github/workflows/test-context-regenerator.yaml`.

@@ -41,7 +41,7 @@ class GatherTestCase(unittest.TestCase):
 
 
 class TestGather(GatherTestCase):
-    def test_writes_the_three_inputs_the_regenerator_reads(self):
+    def test_writes_the_inputs_the_regenerator_reads(self):
         nested = self.repo / "src" / "app"
         nested.mkdir(parents=True)
         (nested / "main.py").write_text("x\n")
@@ -49,7 +49,7 @@ class TestGather(GatherTestCase):
         gather(self.repo)
 
         tmp = self.repo / ".tmp"
-        for name in ("context.md", "readmes.txt", "git-log.txt", "repo-tree.txt"):
+        for name in ("context.md", "readmes.txt", "lessons.txt", "git-log.txt", "repo-tree.txt"):
             self.assertTrue(tmp.joinpath(name).is_file(), f"{name} missing")
 
         tree = tmp.joinpath("repo-tree.txt").read_text()
@@ -129,6 +129,32 @@ class TestGather(GatherTestCase):
         gather(self.repo)
 
         self.assertEqual((self.repo / ".tmp" / "readmes.txt").read_text(), "")
+
+    def test_lessons_learned_are_sent_when_tracked(self):
+        self.add_context("AI/LessonsLearned.md", "Never list the sandbox account as prod.\n")
+
+        gather(self.repo)
+
+        self.assertEqual(
+            (self.repo / ".tmp" / "lessons.txt").read_text(),
+            "Never list the sandbox account as prod.\n",
+        )
+
+    def test_lessons_file_is_written_empty_when_repo_has_none(self):
+        """Most repos have no lessons file; that is normal, not an error."""
+        gather(self.repo)
+
+        self.assertEqual((self.repo / ".tmp" / "lessons.txt").read_text(), "")
+
+    def test_untracked_lessons_are_not_sent(self):
+        """The text becomes instructions, so an untracked local copy must not steer output."""
+        stray = self.repo / "AI" / "LessonsLearned.md"
+        stray.parent.mkdir(parents=True)
+        stray.write_text("UNTRACKED INSTRUCTIONS\n", encoding="utf-8")
+
+        gather(self.repo)
+
+        self.assertEqual((self.repo / ".tmp" / "lessons.txt").read_text(), "")
 
     def test_context_md_is_empty_when_repo_has_no_context_file(self):
         gather(self.repo)

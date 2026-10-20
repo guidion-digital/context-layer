@@ -115,6 +115,16 @@ prompt_addition = os.environ.get('PROMPT_ADDITION', '').strip()
 if prompt_addition:
     system_prompt += "\n\n" + prompt_addition
 
+# The model cannot open files, so the repo's AI/LessonsLearned.md reaches it only as prompt
+# text. Tolerated as missing like readmes.txt; empty when the repo has no such file.
+lessons_path = Path('.tmp/lessons.txt')
+lessons = lessons_path.read_text(encoding='utf-8').strip() if lessons_path.is_file() else ''
+if lessons:
+    system_prompt += (
+        "\n\nLessons learned from earlier regenerations of this repository's context file. "
+        "Treat them as instructions:\n\n" + lessons
+    )
+
 with open('.tmp/context.md', 'r', encoding='utf-8') as f:
     context_md = f.read()
 
